@@ -110,10 +110,10 @@ namespace Planetzine.Common
             RequestCharge += response.RequestCharge;
         }
 
-        public static async Task UpsertDocumentAsync(object document, string collectionId)
+        public static async Task UpsertDocumentAsync(object document, string partitionKey, string collectionId)
         {
             var response = await Client.GetDatabase(DatabaseId).GetContainer(collectionId)
-                .UpsertItemAsync(document);
+                .UpsertItemAsync(document, new PartitionKey(partitionKey));
             RequestCharge += response.RequestCharge;
         }
 

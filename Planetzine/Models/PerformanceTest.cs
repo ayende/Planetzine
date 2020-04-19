@@ -125,7 +125,7 @@ namespace Planetzine.Models
                         if (i > count)
                             return;
                         var j = new Random(i).Next(articles.Length);
-                        var article = await Article.Read(articles[j].ArticleId, articles[j].PartitionId);
+                        var article = await Article.Read(articles[j].ArticleId, articles[j].Author);
                     }
                 }
                 catch (CosmosException)

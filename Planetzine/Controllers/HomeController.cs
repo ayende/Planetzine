@@ -70,6 +70,11 @@ namespace Planetzine.Controllers
                 await Article.Create(await Article.GetSampleArticles(titles));
                 ViewBag.Message = "Articles deleted and recreated.";
             }
+            if (button == "random")
+            {
+                await Article.Create(await Article.GetRadnomArticles());
+                ViewBag.Message = "Random articles added.";
+            }
 
             var diagnostics = new Diagnostics();
             return View(diagnostics);

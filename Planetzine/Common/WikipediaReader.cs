@@ -35,11 +35,26 @@ namespace Planetzine.Common
             return str;
         }
 
+        public static async Task<Article[]> DownloadRandomWikipediaArticles(int num)
+        {
+            var client = new WebClient();
+            client.Headers.Add("user-agent", "Planetzine/1.0 (https://github.com/jahlen/Planetzine)");
+            var data = await client.DownloadDataTaskAsync($"{Endpoint}/w/api.php?action=query&format=json&list=random&rnnamespace=0&rnlimit="+num);
+            var str = Encoding.UTF8.GetString(data);
+            var arr = JObject.Parse(str)["query"].Value<JArray>("random").Select(x => GenerateArticleFromWikipedia(x.Value<string>("title"))).ToArray();
+            await Task.WhenAll(arr);
+            return arr.Select(x => x.Result).ToArray();
+        }
+
         public static async Task<Article> GenerateArticleFromWikipedia(string title)
         {
             var str = await DownloadWikipediaArticle(title);
-            var jobj = JObject.Parse(str);
-            var page = jobj["query"]["pages"].First();
+            var page = JObject.Parse(str)["query"]["pages"].First();
+            return GetArticleFromPage(page);
+        }
+
+        private static Article GetArticleFromPage(JToken page)
+        {
             var revision = page["revisions"].First();
             var content = revision.Value<string>("content");
 

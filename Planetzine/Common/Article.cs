@@ -16,13 +16,10 @@ namespace Planetzine.Common
     public class Article
     {
         public const string CollectionId = "articles";
-        public const string PartitionKey = "/partitionId";
+        public const string PartitionKey = "/author";
 
         [JsonProperty("id")]
         public Guid ArticleId { get; set; }
-
-        [JsonProperty("partitionId")]
-        public string PartitionId => Author;
 
         [JsonProperty("heading")]
         [Required]
@@ -91,12 +88,18 @@ namespace Planetzine.Common
 
         public async Task Upsert()
         {
-            await DbHelper.UpsertDocumentAsync(this, CollectionId);
+            await DbHelper.UpsertDocumentAsync(this, this.Author, CollectionId);
         }
 
         public async Task Delete()
         {
             await DbHelper.DeleteDocumentAsync<Article>(ArticleId.ToString(), Author, CollectionId);
+        }
+
+        public static async Task<Article> Read(Guid articleId)
+        {
+            var article = await DbHelper.GetDocumentAsync<Article>(articleId.ToString(), null, CollectionId);
+            return article;
         }
 
         public static async Task<Article> Read(Guid articleId, string author)
@@ -114,8 +117,8 @@ namespace Planetzine.Common
         public static async Task<Article[]> SearchByAuthor(string author)
         {
             var articles = await DbHelper.ExecuteQueryAsync<Article>(CollectionId, 
-                new QueryDefinition("SELECT * FROM articles AS a WHERE a.author = @author")
-                    .WithParameter("@author", author)
+                new QueryDefinition("SELECT * FROM articles AS a WHERE lower(a.author) = @author")
+                    .WithParameter("@author", author.ToLower())
                 , author);
             return articles;
         }
@@ -138,6 +141,11 @@ namespace Planetzine.Common
         {
             var articleCount = await DbHelper.ExecuteScalarQueryAsync<dynamic>("SELECT VALUE COUNT(1) FROM articles", Article.CollectionId, null);
             return articleCount;
+        }
+
+        public static Task<Article[]> GetRadnomArticles()
+        {
+            return WikipediaReader.DownloadRandomWikipediaArticles(25);
         }
 
         public async static Task<Article[]> GetSampleArticles(string[] titles)

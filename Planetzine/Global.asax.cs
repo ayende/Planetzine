@@ -7,8 +7,10 @@ using System.Web;
 using System.Web.Mvc;
 using System.Web.Optimization;
 using System.Web.Routing;
+using HibernatingRhinos.Profiler.Appender;
 using Planetzine.Models;
 using Planetzine.Common;
+using HibernatingRhinos.Profiler.Appender.Cosmos;
 
 namespace Planetzine
 {
@@ -25,6 +27,9 @@ namespace Planetzine
             RouteConfig.RegisterRoutes(RouteTable.Routes);
             BundleConfig.RegisterBundles(BundleTable.Bundles);
             Task.Run(InitDatabase);
+
+            ProfilerInfrastructure.Initialize(new CosmosDBAppenderConfiguration());
+            ProfilerInfrastructure.StackTraceGenerator.GetStackTrace("test", "fo", Level.Debug);
 
             // Check the EndpointURL
             try
