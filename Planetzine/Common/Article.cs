@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Configuration;
@@ -6,6 +7,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Web;
 using System.Web.Mvc;
+using Microsoft.Azure.Cosmos;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
 
@@ -105,25 +107,30 @@ namespace Planetzine.Common
 
         public static async Task<Article[]> GetAll()
         {
-            var articles = await DbHelper.ExecuteQueryAsync<Article>("SELECT * FROM articles", CollectionId, null);
+            var articles = await DbHelper.ExecuteQueryAsync<Article>(CollectionId, new QueryDefinition("SELECT * FROM articles"));
             return articles;
         }
 
         public static async Task<Article[]> SearchByAuthor(string author)
         {
-            var articles = await DbHelper.ExecuteQueryAsync<Article>($"SELECT * FROM articles AS a WHERE a.author = '{author}'", CollectionId, null);
+            var articles = await DbHelper.ExecuteQueryAsync<Article>(CollectionId, 
+                new QueryDefinition("SELECT * FROM articles AS a WHERE a.author = @author")
+                    .WithParameter("@author", author)
+                , author);
             return articles;
         }
 
         public static async Task<Article[]> SearchByTag(string tag)
         {
-            var articles = await DbHelper.ExecuteQueryAsync<Article>($"SELECT * FROM articles AS a WHERE ARRAY_CONTAINS(a.tags, '{tag}')", CollectionId, null);
+            string sql = $"SELECT * FROM articles AS a WHERE ARRAY_CONTAINS(a.tags, '{tag}')";
+            var articles = await DbHelper.ExecuteQueryAsync<Article>(CollectionId, new QueryDefinition(sql));
             return articles;
         }
 
         public static async Task<Article[]> SearchByFreetext(string freetext)
         {
-            var articles = await DbHelper.ExecuteQueryAsync<Article>($"SELECT * FROM articles AS a WHERE CONTAINS(UPPER(a.body), '{freetext.ToUpper()}')", CollectionId, null);
+            string sql = $"SELECT * FROM articles AS a WHERE CONTAINS(UPPER(a.body), '{freetext.ToUpper()}')";
+            var articles = await DbHelper.ExecuteQueryAsync<Article>(CollectionId, new QueryDefinition(sql));
             return articles;
         }
 
@@ -133,16 +140,18 @@ namespace Planetzine.Common
             return articleCount;
         }
 
-        public async static Task<Article[]> GetSampleArticles()
+        public async static Task<Article[]> GetSampleArticles(string[] titles)
         {
-            var titles = ConfigurationManager.AppSettings["WikipediaSampleArticles"].Split(',');
 
-            var articles = new List<Article>();
+            var articles = new ConcurrentQueue<Article>();
+            var list = new List<Task>();
             foreach (var title in titles)
             {
-                var article = await WikipediaReader.GenerateArticleFromWikipedia(title);
-                articles.Add(article);
+                list.Add(WikipediaReader.GenerateArticleFromWikipedia(title)
+                    .ContinueWith(t => articles.Enqueue(t.Result)));
             }
+
+            await Task.WhenAll(list);
 
             return articles.ToArray();
         }

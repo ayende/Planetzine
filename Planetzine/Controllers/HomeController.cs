@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Configuration;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Web;
@@ -11,6 +12,7 @@ namespace Planetzine.Controllers
 {
     public class HomeController : Controller
     {
+        [HttpGet]
         public async Task<ActionResult> Index(string tag, string author, string freeTextSearch)
         {
             var articles = new Index();
@@ -27,17 +29,20 @@ namespace Planetzine.Controllers
             return View(articles);
         }
 
+        [HttpGet]
         public ActionResult About()
         {
             return View();
         }
 
+        [HttpGet]
         public async Task<ActionResult> View(Guid articleId, string author)
         {
             var article = await Article.Read(articleId, author);
             return View(article);
         }
 
+        [HttpGet]
         public async Task<ActionResult> Diagnostics()
         {
             await Planetzine.MvcApplication.DatabaseReady.Task; // Make sure database and collection is created before continuing
@@ -61,7 +66,8 @@ namespace Planetzine.Controllers
                 //await DbHelper.DeleteCollection(Article.CollectionId);
                 //await DbHelper.CreateCollection(Article.CollectionId, Article.PartitionKey);
                 await DbHelper.DeleteAllDocumentsAsync<Article>(Article.CollectionId);
-                await Article.Create(await Article.GetSampleArticles());
+                var titles = ConfigurationManager.AppSettings["WikipediaSampleArticles"].Split(',');
+                await Article.Create(await Article.GetSampleArticles(titles));
                 ViewBag.Message = "Articles deleted and recreated.";
             }
 

@@ -52,7 +52,11 @@ namespace Planetzine.Models
                 NumberOfQueryResults = 1;
 
             Writes = await RunCreateTest("Writes", NumberOfWrites);
-            Query = await RunTest("Query", async () => articles = await DbHelper.ExecuteQueryAsync<Article>($"SELECT TOP {NumberOfQueryResults} * FROM {Article.CollectionId} AS c", Article.CollectionId, null), NumberOfQueryResults);
+            Query = await RunTest("Query", async () =>
+            {
+                string sql = $"SELECT TOP {NumberOfQueryResults} * FROM {Article.CollectionId} AS c";
+                articles = await DbHelper.ExecuteQueryAsync<Article>(Article.CollectionId, new QueryDefinition(sql));
+            }, NumberOfQueryResults);
             RandomReads = await RunRandomReadTest("RandomReads", NumberOfRandomReads, articles);
             Upserts = await RunUpsertTest("Upserts", NumberOfUpserts, articles);
         }

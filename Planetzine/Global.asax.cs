@@ -68,9 +68,12 @@ namespace Planetzine
                 await DbHelper.CreateDatabaseAsync();
                 await DbHelper.CreateCollectionAsync(Article.CollectionId, Article.PartitionKey);
 
+                var titles = ConfigurationManager.AppSettings["WikipediaSampleArticles"].Split(',');
+
+
                 // If the database if empty, insert some sample articles
-                if (await Article.GetNumberOfArticles() == 0)
-                    await Article.Create(await Article.GetSampleArticles());
+                if (await Article.GetNumberOfArticles() < titles.Length)
+                    await Article.Create(await Article.GetSampleArticles(titles));
 
                 DatabaseReady.SetResult(null);
             }

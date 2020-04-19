@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using System.Configuration;
 using HibernatingRhinos.Profiler.Appender.Cosmos;
 using Microsoft.Azure.Cosmos;
+using System.Runtime.InteropServices;
 
 namespace Planetzine.Common
 {
@@ -135,26 +136,27 @@ namespace Planetzine.Common
 
         public static async Task DeleteAllDocumentsAsync<T>(string collectionId)
         {
-            var documents = await ExecuteQueryAsync<dynamic>($"SELECT c.id, c.partitionId FROM {collectionId} AS c", collectionId, null);
+            string sql = $"SELECT c.id, c.partitionId FROM {collectionId} AS c";
+            var documents = await ExecuteQueryAsync<dynamic>(collectionId, new QueryDefinition(sql));
             foreach (var document in documents)
             {
                 await DeleteDocumentAsync<T>(document.id, document.partitionId, collectionId);
             }
         }
 
-        public static async Task<T[]> ExecuteQueryAsync<T>(string sql, string collectionId, string partitionKey)
+        public static async Task<T[]> ExecuteQueryAsync<T>(string collectionId, QueryDefinition query, string partitionKey = null)
         {
-            var queryRequestOptions = new QueryRequestOptions();
+            var requestOptions = new QueryRequestOptions();
             if (partitionKey != null)
-                queryRequestOptions.PartitionKey = new PartitionKey(partitionKey);
+                requestOptions.PartitionKey = new PartitionKey(partitionKey);
 
-            var query = Client.GetDatabase(DatabaseId).GetContainer(collectionId)
-                .GetItemQueryIterator<T>(new QueryDefinition(sql), requestOptions: queryRequestOptions);
+            var q = Client.GetDatabase(DatabaseId).GetContainer(collectionId)
+                .GetItemQueryIterator<T>(query, requestOptions: requestOptions);
             
             var results = new List<T>();
-            while (query.HasMoreResults)
+            while (q.HasMoreResults)
             {
-                var items = await query.ReadNextAsync();
+                var items = await q.ReadNextAsync();
                 results.AddRange(items);
                 RequestCharge += items.RequestCharge;
             }
