@@ -60,7 +60,7 @@ namespace Planetzine.Controllers
             {
                 //await DbHelper.DeleteCollection(Article.CollectionId);
                 //await DbHelper.CreateCollection(Article.CollectionId, Article.PartitionKey);
-                await DbHelper.DeleteAllDocumentsAsync(Article.CollectionId);
+                await DbHelper.DeleteAllDocumentsAsync<Article>(Article.CollectionId);
                 await Article.Create(await Article.GetSampleArticles());
                 ViewBag.Message = "Articles deleted and recreated.";
             }

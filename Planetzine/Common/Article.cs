@@ -94,7 +94,7 @@ namespace Planetzine.Common
 
         public async Task Delete()
         {
-            await DbHelper.DeleteDocumentAsync(ArticleId.ToString(), Author, CollectionId);
+            await DbHelper.DeleteDocumentAsync<Article>(ArticleId.ToString(), Author, CollectionId);
         }
 
         public static async Task<Article> Read(Guid articleId, string author)
@@ -105,31 +105,31 @@ namespace Planetzine.Common
 
         public static async Task<Article[]> GetAll()
         {
-            var articles = await DbHelper.ExecuteQueryAsync<Article>("SELECT * FROM articles", CollectionId, true);
+            var articles = await DbHelper.ExecuteQueryAsync<Article>("SELECT * FROM articles", CollectionId, null);
             return articles;
         }
 
         public static async Task<Article[]> SearchByAuthor(string author)
         {
-            var articles = await DbHelper.ExecuteQueryAsync<Article>($"SELECT * FROM articles AS a WHERE a.author = '{author}'", CollectionId, true);
+            var articles = await DbHelper.ExecuteQueryAsync<Article>($"SELECT * FROM articles AS a WHERE a.author = '{author}'", CollectionId, null);
             return articles;
         }
 
         public static async Task<Article[]> SearchByTag(string tag)
         {
-            var articles = await DbHelper.ExecuteQueryAsync<Article>($"SELECT * FROM articles AS a WHERE ARRAY_CONTAINS(a.tags, '{tag}')", CollectionId, true);
+            var articles = await DbHelper.ExecuteQueryAsync<Article>($"SELECT * FROM articles AS a WHERE ARRAY_CONTAINS(a.tags, '{tag}')", CollectionId, null);
             return articles;
         }
 
         public static async Task<Article[]> SearchByFreetext(string freetext)
         {
-            var articles = await DbHelper.ExecuteQueryAsync<Article>($"SELECT * FROM articles AS a WHERE CONTAINS(UPPER(a.body), '{freetext.ToUpper()}')", CollectionId, true);
+            var articles = await DbHelper.ExecuteQueryAsync<Article>($"SELECT * FROM articles AS a WHERE CONTAINS(UPPER(a.body), '{freetext.ToUpper()}')", CollectionId, null);
             return articles;
         }
 
         public async static Task<long> GetNumberOfArticles()
         {
-            var articleCount = await DbHelper.ExecuteScalarQueryAsync<dynamic>("SELECT VALUE COUNT(1) FROM articles", Article.CollectionId, true);
+            var articleCount = await DbHelper.ExecuteScalarQueryAsync<dynamic>("SELECT VALUE COUNT(1) FROM articles", Article.CollectionId, null);
             return articleCount;
         }
 

@@ -2,11 +2,10 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Web;
-using Microsoft.Azure.Documents.Client;
-using Microsoft.Azure.Documents;
 using System.Threading.Tasks;
 using System.Configuration;
-using Microsoft.Azure.Documents.Linq;
+using HibernatingRhinos.Profiler.Appender.Cosmos;
+using Microsoft.Azure.Cosmos;
 
 namespace Planetzine.Common
 {
@@ -20,8 +19,7 @@ namespace Planetzine.Common
         public static readonly string AuthKey;
 
         public static string CurrentRegion;
-        public static ConnectionPolicy ConnectionPolicy;
-        public static DocumentClient Client;
+        public static CosmosClient Client;
         public static double RequestCharge;
 
         static DbHelper()
@@ -44,27 +42,26 @@ namespace Planetzine.Common
         {
             CurrentRegion = GetCurrentAzureRegion();
 
-            // Create connection policy
-            ConnectionPolicy = new ConnectionPolicy
+            Client = new CosmosClient(EndpointUrl, AuthKey, new CosmosClientOptions
             {
-                ConnectionMode = (ConnectionMode)Enum.Parse(typeof(ConnectionMode), ConfigurationManager.AppSettings["ConnectionMode"]),
-                ConnectionProtocol = (Protocol)Enum.Parse(typeof(Protocol), ConfigurationManager.AppSettings["ConnectionProtocol"]),
-                EnableEndpointDiscovery = true,
-                MaxConnectionLimit = MaxConnectionLimit,
-                RetryOptions = new RetryOptions { MaxRetryAttemptsOnThrottledRequests = 10, MaxRetryWaitTimeInSeconds = 30 }
-            };
-            ConnectionPolicy.PreferredLocations.Add(await GetNearestAzureReadRegionAsync());
-
-            Client = new DocumentClient(new Uri(EndpointUrl), AuthKey, ConnectionPolicy, ConsistencyLevel);
-            await Client.OpenAsync(); // Preload routing tables, to avoid a startup latency on the first request.
+                ConsistencyLevel = ConsistencyLevel,
+                ConnectionMode = (ConnectionMode) Enum.Parse(typeof(ConnectionMode),
+                    ConfigurationManager.AppSettings["ConnectionMode"]),
+                EnableTcpConnectionEndpointRediscovery = true,
+                //GatewayModeMaxConnectionLimit = MaxConnectionLimit,
+                MaxRetryAttemptsOnRateLimitedRequests = 10,
+                MaxRetryWaitTimeOnRateLimitedRequests = TimeSpan.FromSeconds(10),
+                ApplicationPreferredRegions = new List<string> {await GetNearestAzureReadRegionAsync()}
+            });
+            CosmosDBProfiler.Initialize(Client);
         }
 
-        private static async Task<IEnumerable<DatabaseAccountLocation>> GetAvailableAzureReadRegionsAsync()
+        private static async Task<IEnumerable<AccountRegion>> GetAvailableAzureReadRegionsAsync()
         {
-            using (var client = new DocumentClient(new Uri(EndpointUrl), AuthKey, ConnectionPolicy.Default))
+            using (var client = new CosmosClient(EndpointUrl, AuthKey))
             {
-                var account = await client.GetDatabaseAccountAsync();
-                return account.ReadableLocations;
+                var account = await client.ReadAccountAsync();
+                return account.ReadableRegions;
             }
         }
 
@@ -89,109 +86,96 @@ namespace Planetzine.Common
 
         public static async Task CreateDatabaseAsync()
         {
-            await Client.CreateDatabaseIfNotExistsAsync(new Database { Id = DatabaseId });
+            await Client.CreateDatabaseIfNotExistsAsync(DatabaseId);
         }
 
         public static async Task CreateCollectionAsync(string collectionId, string partitionKey)
         {
-            var myCollection = new DocumentCollection();
-            myCollection.Id = collectionId;
-            myCollection.PartitionKey.Paths.Add(partitionKey);
-
-            await Client.CreateDocumentCollectionIfNotExistsAsync(
-                UriFactory.CreateDatabaseUri(DatabaseId),
-                myCollection,
-                new RequestOptions { OfferThroughput = InitialThroughput });
-        }
-
-        public static async Task DeleteCollectionAsync(string collectionId)
-        {
-            var uri = UriFactory.CreateDocumentCollectionUri(DatabaseId, collectionId);
-
-            await Client.DeleteDocumentCollectionAsync(uri);
+            var database = Client.GetDatabase(DatabaseId);
+            await database.CreateContainerIfNotExistsAsync(
+                new ContainerProperties(collectionId, partitionKey),
+                InitialThroughput);
         }
 
         public static async Task DeleteDatabaseAsync()
         {
-            var uri = UriFactory.CreateDatabaseUri(DatabaseId);
-
-            await Client.DeleteDatabaseAsync(uri);
+            await Client.GetDatabase(DatabaseId).DeleteAsync();
         }
 
         public static async Task CreateDocumentAsync(object document, string collectionId)
         {
-            var uri = UriFactory.CreateDocumentCollectionUri(DatabaseId, collectionId);
-            var response = await Client.CreateDocumentAsync(uri, document);
+            var response = await Client.GetDatabase(DatabaseId).GetContainer(collectionId)
+                .CreateItemAsync(document);
             RequestCharge += response.RequestCharge;
         }
 
         public static async Task UpsertDocumentAsync(object document, string collectionId)
         {
-            var uri = UriFactory.CreateDocumentCollectionUri(DatabaseId, collectionId);
-            var response = await Client.UpsertDocumentAsync(uri, document);
+            var response = await Client.GetDatabase(DatabaseId).GetContainer(collectionId)
+                .UpsertItemAsync(document);
             RequestCharge += response.RequestCharge;
         }
 
-        public static async Task ReplaceDocumentAsync(object document, string documentId, string collectionId)
+        public static async Task<ItemResponse<T>> GetDocumentAsync<T>(string documentId, string partitionKey, string collectionId)
         {
-            var uri = UriFactory.CreateDocumentUri(DatabaseId, collectionId, documentId);
-            var response = await Client.ReplaceDocumentAsync(uri, document);
-            RequestCharge += response.RequestCharge;
-        }
+            var response = await Client.GetDatabase(DatabaseId).GetContainer(collectionId)
+                .ReadItemAsync<T>(documentId, new PartitionKey(partitionKey));
 
-        public static async Task<DocumentResponse<T>> GetDocumentAsync<T>(string documentId, object partitionKey, string collectionId)
-        {
-            var uri = UriFactory.CreateDocumentUri(DatabaseId, collectionId, documentId);
-
-            var response = await Client.ReadDocumentAsync<T>(uri, new RequestOptions { PartitionKey = new PartitionKey(partitionKey) });
             RequestCharge += response.RequestCharge;
             
             return response;
         }
 
-        public static async Task DeleteDocumentAsync(string documentId, object partitionKey, string collectionId)
+        public static async Task DeleteDocumentAsync<T>(string documentId, string partitionKey, string collectionId)
         {
-            var uri = UriFactory.CreateDocumentUri(DatabaseId, collectionId, documentId);
-
-            var response = await Client.DeleteDocumentAsync(uri, new RequestOptions { PartitionKey = new PartitionKey(partitionKey) });
+            var response = await Client.GetDatabase(DatabaseId).GetContainer(collectionId)
+                .DeleteItemAsync<T>(documentId, new PartitionKey(partitionKey));
             RequestCharge += response.RequestCharge;
         }
 
-        public static async Task DeleteAllDocumentsAsync(string collectionId)
+        public static async Task DeleteAllDocumentsAsync<T>(string collectionId)
         {
-            var documents = await ExecuteQueryAsync<dynamic>($"SELECT c.id, c.partitionId FROM {collectionId} AS c", collectionId, true);
+            var documents = await ExecuteQueryAsync<dynamic>($"SELECT c.id, c.partitionId FROM {collectionId} AS c", collectionId, null);
             foreach (var document in documents)
             {
-                await DeleteDocumentAsync(document.id, document.partitionId, collectionId);
+                await DeleteDocumentAsync<T>(document.id, document.partitionId, collectionId);
             }
         }
 
-        public static async Task<T[]> ExecuteQueryAsync<T>(string sql, string collectionId, bool enableCrossPartitionQuery)
+        public static async Task<T[]> ExecuteQueryAsync<T>(string sql, string collectionId, string partitionKey)
         {
-            var uri = UriFactory.CreateDocumentCollectionUri(DatabaseId, collectionId);
-            var query = Client.CreateDocumentQuery<T>(uri, sql, new FeedOptions { EnableCrossPartitionQuery = enableCrossPartitionQuery }).AsDocumentQuery();
+            var queryRequestOptions = new QueryRequestOptions();
+            if (partitionKey != null)
+                queryRequestOptions.PartitionKey = new PartitionKey(partitionKey);
 
+            var query = Client.GetDatabase(DatabaseId).GetContainer(collectionId)
+                .GetItemQueryIterator<T>(new QueryDefinition(sql), requestOptions: queryRequestOptions);
+            
             var results = new List<T>();
             while (query.HasMoreResults)
             {
-                var items = await query.ExecuteNextAsync<T>();
-                results.AddRange(items.AsEnumerable());
+                var items = await query.ReadNextAsync();
+                results.AddRange(items);
                 RequestCharge += items.RequestCharge;
             }
 
             return results.ToArray();
         }
 
-        public static async Task<T> ExecuteScalarQueryAsync<T>(string sql, string collectionId, bool enableCrossPartitionQuery)
+        public static async Task<T> ExecuteScalarQueryAsync<T>(string sql, string collectionId, string partitionKey)
         {
-            var uri = UriFactory.CreateDocumentCollectionUri(DatabaseId, collectionId);
-            var query = Client.CreateDocumentQuery<T>(uri, sql, new FeedOptions { EnableCrossPartitionQuery = enableCrossPartitionQuery }).AsDocumentQuery();
+            var queryRequestOptions = new QueryRequestOptions();
+            if (partitionKey != null)
+                queryRequestOptions.PartitionKey = new PartitionKey(partitionKey);
+
+            var query = Client.GetDatabase(DatabaseId).GetContainer(collectionId)
+                .GetItemQueryIterator<T>(new QueryDefinition(sql), requestOptions: queryRequestOptions);
 
             var results = new List<T>();
             while (query.HasMoreResults)
             {
-                var items = await query.ExecuteNextAsync<T>();
-                results.AddRange(items.AsEnumerable());
+                var items = await query.ReadNextAsync();
+                results.AddRange(items);
                 RequestCharge += items.RequestCharge;
             }
 
@@ -210,14 +194,11 @@ namespace Planetzine.Common
             results += $"Total RequestCharge: {RequestCharge:f2} <br/>";
             results += $"EndpointUrl: {EndpointUrl} <br/>";
 
-            results += $"ServiceEndpoint: {Client.ServiceEndpoint} <br/>";
-            results += $"ReadEndpoint: {Client.ReadEndpoint} <br/>";
-            results += $"WriteEndpoint: {Client.WriteEndpoint} <br/>";
-            results += $"ConsistencyLevel: {Client.ConsistencyLevel} <br/>";
-            results += $"ConnectionMode: {Client.ConnectionPolicy.ConnectionMode} <br/>";
-            results += $"ConnectionProtocol: {Client.ConnectionPolicy.ConnectionProtocol} <br/>";
-            results += $"MaxConnectionLimit: {Client.ConnectionPolicy.MaxConnectionLimit} <br/>";
-            results += $"PreferredLocations: {string.Join(", ", Client.ConnectionPolicy.PreferredLocations)} <br/>";
+            results += $"ServiceEndpoint: {Client.Endpoint} <br/>";
+            results += $"ConsistencyLevel: {Client.ClientOptions.ConsistencyLevel} <br/>";
+            results += $"ConnectionMode: {Client.ClientOptions.ConnectionMode} <br/>";
+            results += $"MaxConnectionLimit: {Client.ClientOptions.GatewayModeMaxConnectionLimit} <br/>";
+            results += $"PreferredLocations: {string.Join(", ", Client.ClientOptions.ApplicationPreferredRegions)} <br/>";
 
             return results;
         }

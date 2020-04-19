@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Web;
+using Microsoft.Azure.Cosmos;
 using Planetzine.Common;
 
 namespace Planetzine.Models
@@ -51,7 +52,7 @@ namespace Planetzine.Models
                 NumberOfQueryResults = 1;
 
             Writes = await RunCreateTest("Writes", NumberOfWrites);
-            Query = await RunTest("Query", async () => articles = await DbHelper.ExecuteQueryAsync<Article>($"SELECT TOP {NumberOfQueryResults} * FROM {Article.CollectionId} AS c", Article.CollectionId, true), NumberOfQueryResults);
+            Query = await RunTest("Query", async () => articles = await DbHelper.ExecuteQueryAsync<Article>($"SELECT TOP {NumberOfQueryResults} * FROM {Article.CollectionId} AS c", Article.CollectionId, null), NumberOfQueryResults);
             RandomReads = await RunRandomReadTest("RandomReads", NumberOfRandomReads, articles);
             Upserts = await RunUpsertTest("Upserts", NumberOfUpserts, articles);
         }
@@ -92,9 +93,9 @@ namespace Planetzine.Models
                         await article.Create();
                     }
                 }
-                catch (DocumentClientException ex)
+                catch (CosmosException)
                 {
-                    // If we get any DocumentClientException (for instance a RequestRateTooLargeException) - quit this task
+                    // If we get any CosmosException (for instance a RequestRateTooLargeException) - quit this task
                     // Maybe should notify the user?
                 }
             }
@@ -123,9 +124,9 @@ namespace Planetzine.Models
                         var article = await Article.Read(articles[j].ArticleId, articles[j].PartitionId);
                     }
                 }
-                catch (DocumentClientException ex)
+                catch (CosmosException)
                 {
-                    // If we get any DocumentClientException (for instance a RequestRateTooLargeException) - quit this task
+                    // If we get any CosmosException (for instance a RequestRateTooLargeException) - quit this task
                     // Maybe should notify the user?
                 }
             }
@@ -155,9 +156,9 @@ namespace Planetzine.Models
                         await articles[j].Upsert();
                     }
                 }
-                catch (DocumentClientException ex)
+                catch (CosmosException)
                 {
-                    // If we get any DocumentClientException (for instance a RequestRateTooLargeException) - quit this task
+                    // If we get any CosmosException (for instance a RequestRateTooLargeException) - quit this task
                     // Maybe should notify the user?
                 }
             }
